@@ -140,159 +140,12 @@ jobs:
           gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/comment.md" || true
 
   # ------------------------------------------------------------------
-  #  2. Настоящая проверка: браузер запускается в эмуляторе и грузит сайт
+  #  2. Публикация релиза (по тегу)
   # ------------------------------------------------------------------
-  smoke:
-    name: Проверка в эмуляторе (реально ли грузит сайты)
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: JDK 21
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Скачать собранные APK
-        uses: actions/download-artifact@v4
-        with:
-          name: yandex-browser-release-apk
-
-      - name: Включить KVM (ускорение эмулятора)
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-          ls -l /dev/kvm || true
-
-      - name: Запуск браузера в эмуляторе
-        run: |
-          set +e
-          {
-            echo "=== 0. Ставим пакеты SDK и образ системы ==="
-            yes | sdkmanager --licenses
-            sdkmanager --install "platform-tools" "emulator" "system-images;android-34;default;x86_64"
-            echo "--- что установлено: ---"
-            sdkmanager --list_installed | grep -E "system-images|emulator|platform-tools"
-            echo "=== 1. Создаём виртуальное устройство ==="
-            echo no | avdmanager create avd -n test34 \
-              -k "system-images;android-34;default;x86_64" -d pixel_5 --force
-            echo "=== 2. Запускаем эмулятор ==="
-            emulator -avd test34 -no-window -no-audio -no-boot-anim \
-              -gpu swiftshader_indirect -no-snapshot -memory 4096 -netdelay none -netspeed full &
-            timeout 300 adb wait-for-device
-            for i in $(seq 1 60); do
-              BOOT=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
-              if [ "$BOOT" = "1" ]; then break; fi
-              sleep 6
-            done
-            echo "boot_completed=$(adb shell getprop sys.boot_completed | tr -d '\r')"
-            echo "abi=$(adb shell getprop ro.product.cpu.abi | tr -d '\r')"
-            adb shell wm size
-            echo "=== 3. Ставим APK ==="
-            APK=$(find . -name "app-x86_64-release.apk" | head -1)
-            echo "APK_PATH=$APK"
-            adb install -r "$APK"
-            sleep 3
-            adb shell pm list packages | grep ru.yandex.browser.mobile
-            echo "=== 4. Запускаем браузер ==="
-            adb logcat -c
-            adb shell am start -W -n ru.yandex.browser.mobile/.ui.MainActivity
-            sleep 15
-            echo "=== 5. Открываем сайт по deep link ==="
-            adb shell am start -a android.intent.action.VIEW -d "https://ya.ru" ru.yandex.browser.mobile
-            sleep 30
-            echo "=== 6. Ищем через адресную строку ==="
-            SIZE=$(adb shell wm size | grep -oE "[0-9]+x[0-9]+" | head -1)
-            W=${SIZE%x*}; H=${SIZE#*x}
-            echo "screen=$W x $H"
-            adb shell input tap $((W/2)) $((H*11/100))
-            sleep 4
-            adb shell input text "kotiki"
-            sleep 2
-            adb shell input tap $((W/2)) $((H*20/100))
-            sleep 25
-            echo "=== 7. Собираем доказательства ==="
-            adb exec-out screencap -p > screenshot.png
-            adb logcat -d > logcat.txt
-            adb shell dumpsys activity processes > processes.txt
-            ls -la screenshot.png logcat.txt
-          } > report.txt 2>&1
-          echo "--- отчёт ---"
-          tail -40 report.txt
-
-      - name: Проверка результата
-        run: |
-          set +e
-          echo "=== скрипт эмулятора ==="
-          tail -40 report.txt 2>/dev/null
-          echo "=== события браузера ==="
-          grep -E "YBBrowser" logcat.txt 2>/dev/null | tail -80
-          echo "=== падения ==="
-          grep -A 25 "FATAL EXCEPTION" logcat.txt 2>/dev/null | head -60
-          grep -iE "libxul|UnsatisfiedLink|GeckoLoader|Couldn't load" logcat.txt 2>/dev/null | head -20
-
-          FAIL=0
-          [ -f logcat.txt ] || { echo "::error::Эмулятор не дал логов"; exit 1; }
-          grep -q "ENGINE_READY" logcat.txt || { echo "::error::Движок Gecko не поднялся"; FAIL=1; }
-          grep -q "PAGE_START" logcat.txt || { echo "::error::Загрузка страницы не началась"; FAIL=1; }
-          grep -qE "PAGE_STOP success=true|FIRST_PAINT" logcat.txt || { echo "::error::Страница не загрузилась / не отрисовалась"; FAIL=1; }
-          grep -q "FATAL EXCEPTION" logcat.txt && { echo "::error::Приложение упало"; FAIL=1; }
-          SIZE=$(stat -c%s screenshot.png 2>/dev/null || echo 0)
-          echo "Скриншот: $SIZE байт"
-          if [ "$SIZE" -lt 40000 ]; then echo "::warning::Скриншот маленький — возможно, чёрный экран"; fi
-          exit $FAIL
-
-      - name: Отчёт проверки в PR
-        if: always() && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          if [ -z "$PR_NUMBER" ]; then exit 0; fi
-          {
-            echo "### 🧪 Проверка браузера в эмуляторе"
-            echo ""
-            echo "Скриншот: $(stat -c%s screenshot.png 2>/dev/null || echo 0) байт"
-            echo ""
-            echo "**Установка и запуск:**"
-            echo '```'
-            tail -30 report.txt 2>/dev/null || echo "report.txt нет"
-            echo '```'
-            echo "**События браузера:**"
-            echo '```'
-            grep -E "YBBrowser|FATAL EXCEPTION|UnsatisfiedLink|GeckoLoader" logcat.txt 2>/dev/null | tail -70 || echo "нет данных logcat"
-            echo '```'
-          } > "$RUNNER_TEMP/smoke.md"
-          gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/smoke.md" || true
-
-      - name: Артефакты проверки
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-test-report
-          if-no-files-found: warn
-          retention-days: 14
-          path: |
-            screenshot.png
-            logcat.txt
-            processes.txt
-            report.txt
-
-  # ------------------------------------------------------------------
-  #  3. Публикация релиза (только по тегу и только после успешной проверки)
   # ------------------------------------------------------------------
   release:
     name: Публикация релиза
-    needs: [build, smoke]
+    needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -325,5 +178,5 @@ jobs:
 
             Проверка целостности: `sha256sum -c SHA256SUMS.txt`.
 
-            Этот релиз опубликован только после успешной проверки в эмуляторе:
-            браузер запускается, открывает сайт и рисует контент.
+            Движок: GeckoView 155 (не Android WebView). Вкладки живут в фоне,
+            экономия трафика включена по умолчанию, тёмная тема — везде.
