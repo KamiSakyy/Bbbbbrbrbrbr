@@ -172,34 +172,50 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -memory 4096
           disable-animations: true
           script: |
-            adb install -r app-x86_64-release.apk
+            set +e
+            exec > >(tee report.txt) 2>&1
+            APK=$(find . -name "app-x86_64-release.apk" | head -1)
+            echo "APK_PATH=$APK"
+            ls -la
+            adb shell getprop ro.product.cpu.abi
+            adb shell wm size
+            adb install -r "$APK"
+            sleep 3
+            adb shell pm list packages | grep ru.yandex.browser.mobile
             adb logcat -c
-            adb shell am start -W -n ru.yandex.browser.mobile/.ui.MainActivity || true
+            adb shell am start -W -n ru.yandex.browser.mobile/.ui.MainActivity
             sleep 15
-            echo "--- открываем сайт через deep link ---"
-            adb shell am start -a android.intent.action.VIEW -d "https://ya.ru" ru.yandex.browser.mobile || true
+            echo "--- deep link: открываем сайт ---"
+            adb shell am start -a android.intent.action.VIEW -d "https://ya.ru" ru.yandex.browser.mobile
             sleep 30
-            echo "--- ввод поискового запроса в адресную строку ---"
-            adb shell input tap 540 150 || true
+            echo "--- поиск: тапаем адресную строку и вводим запрос ---"
+            SIZE=$(adb shell wm size | grep -oE "[0-9]+x[0-9]+" | head -1)
+            W=${SIZE%x*}; H=${SIZE#*x}
+            adb shell input tap $((W/2)) $((H*11/100))
             sleep 4
-            adb shell input text "kotiki" || true
+            adb shell input text "kotiki"
             sleep 2
-            adb shell input tap 540 300 || true
+            adb shell input tap $((W/2)) $((H*20/100))
             sleep 25
-            adb exec-out screencap -p > screenshot.png || true
-            adb logcat -d > logcat.txt || true
-            adb shell dumpsys activity processes > processes.txt || true
+            adb exec-out screencap -p > screenshot.png
+            adb logcat -d > logcat.txt
+            adb shell dumpsys activity processes > processes.txt
+            echo "--- готово, файлы: ---"
+            ls -la
 
       - name: Проверка результата
         run: |
           set +e
+          echo "=== скрипт эмулятора ==="
+          tail -30 report.txt 2>/dev/null
           echo "=== события браузера ==="
-          grep -E "YBBrowser" logcat.txt | tail -80
+          grep -E "YBBrowser" logcat.txt 2>/dev/null | tail -80
           echo "=== падения ==="
           grep -A 25 "FATAL EXCEPTION" logcat.txt | head -60
           grep -iE "libxul|UnsatisfiedLink|GeckoLoader|Couldn't load" logcat.txt | head -20
 
           FAIL=0
+          [ -f logcat.txt ] || { echo "::error::Логи не собраны — эмулятор/установка не сработали"; exit 1; }
           grep -q "ENGINE_READY" logcat.txt || { echo "::error::Движок Gecko не поднялся"; FAIL=1; }
           grep -q "PAGE_START" logcat.txt || { echo "::error::Загрузка страницы не началась"; FAIL=1; }
           grep -qE "PAGE_STOP success=true|FIRST_PAINT" logcat.txt || { echo "::error::Страница не загрузилась / не отрисовалась"; FAIL=1; }
@@ -221,6 +237,11 @@ jobs:
             echo ""
             echo "Скриншот: $(stat -c%s screenshot.png 2>/dev/null || echo 0) байт"
             echo ""
+            echo "**Что делал скрипт (установка/запуск):**"
+            echo '```'
+            tail -25 report.txt 2>/dev/null || echo "report.txt нет — эмулятор не запустился"
+            echo '```'
+            echo "**События браузера:**"
             echo '```'
             grep -E "YBBrowser|FATAL EXCEPTION|UnsatisfiedLink|GeckoLoader" logcat.txt 2>/dev/null | tail -70 || echo "нет данных logcat"
             echo '```'
@@ -238,6 +259,8 @@ jobs:
             screenshot.png
             logcat.txt
             processes.txt
+            report.txt
+            install.txt
 
   # ------------------------------------------------------------------
   #  3. Публикация релиза (только по тегу и только после успешной проверки)
