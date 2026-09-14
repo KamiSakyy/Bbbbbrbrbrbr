@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: build-${{ github.ref }}
@@ -68,12 +69,32 @@ jobs:
           fi
 
       - name: Сборка release APK (arm64 / armv7 / x86_64)
+        id: build
         run: |
+          set -o pipefail
           export KEYSTORE_FILE="$RUNNER_TEMP/keys/release.jks"
           export KEYSTORE_PASSWORD="${KEYSTORE_PASSWORD:-ybrowser2026}"
           export KEY_ALIAS="${KEY_ALIAS:-ybrowser}"
           export KEY_PASSWORD="${KEY_PASSWORD:-ybrowser2026}"
-          ./gradlew :app:assembleRelease --no-daemon --stacktrace
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      # Диагностика: если сборка упала — выкладываем хвост лога комментарием в PR,
+      # чтобы ошибки компиляции были видны прямо в пул-реквесте.
+      - name: Лог ошибок в PR
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "$PR_NUMBER" ]; then echo "PR не найден — пропускаем"; exit 0; fi
+          {
+            echo "### ❌ Сборка упала"
+            echo ""
+            echo '```'
+            tail -c 15000 "$RUNNER_TEMP/build.log" 2>/dev/null || echo "лог недоступен"
+            echo '```'
+          } > "$RUNNER_TEMP/comment.md"
+          gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/comment.md" || true
 
       - name: Размеры APK
         run: |

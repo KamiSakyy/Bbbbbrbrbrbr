@@ -105,14 +105,14 @@ class KeepAliveService : Service() {
             .setContentIntent(openIntent)
             .addAction(
                 Notification.Action.Builder(
-                    null,
+                    null as android.graphics.drawable.Icon?,
                     getString(R.string.notif_action_open),
                     openIntent,
                 ).build(),
             )
             .addAction(
                 Notification.Action.Builder(
-                    null,
+                    null as android.graphics.drawable.Icon?,
                     getString(R.string.notif_action_stop),
                     stopIntent,
                 ).build(),
