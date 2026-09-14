@@ -28,16 +28,14 @@ val hasReleaseKeys = storeFilePath != null && storePass != null && keyAliasName 
 
 android {
     namespace = "ru.yandex.browser.mobile"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "ru.yandex.browser.mobile"
         minSdk = 26            // GeckoView требует API 26+
-        targetSdk = 36
+        targetSdk = 36   // compileSdk 37 — требование свежих AndroidX
         versionCode = 1
         versionName = "1.0.0"
-        // Оставляем только ru/en — экономит ~1.5 МБ в APK.
-        resourceConfigurations += listOf("ru", "en")
     }
 
     // ------------------------------------------------------------------
