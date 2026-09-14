@@ -158,13 +158,8 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Android SDK + образ эмулятора
+      - name: Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            emulator
-            system-images;android-34;default;x86_64
 
       - name: Скачать собранные APK
         uses: actions/download-artifact@v4
@@ -182,14 +177,19 @@ jobs:
         run: |
           set +e
           {
+            echo "=== 0. Ставим пакеты SDK и образ системы ==="
+            yes | sdkmanager --licenses
+            sdkmanager --install "platform-tools" "emulator" "system-images;android-34;default;x86_64"
+            echo "--- что установлено: ---"
+            sdkmanager --list_installed | grep -E "system-images|emulator|platform-tools"
             echo "=== 1. Создаём виртуальное устройство ==="
             echo no | avdmanager create avd -n test34 \
               -k "system-images;android-34;default;x86_64" -d pixel_5 --force
             echo "=== 2. Запускаем эмулятор ==="
             emulator -avd test34 -no-window -no-audio -no-boot-anim \
               -gpu swiftshader_indirect -no-snapshot -memory 4096 -netdelay none -netspeed full &
-            adb wait-for-device
-            for i in $(seq 1 100); do
+            timeout 300 adb wait-for-device
+            for i in $(seq 1 60); do
               BOOT=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
               if [ "$BOOT" = "1" ]; then break; fi
               sleep 6
