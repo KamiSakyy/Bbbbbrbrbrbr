@@ -91,6 +91,13 @@ android {
     }
 
     packaging {
+        // Движок весит много (libxul.so ~ десятки МБ). Сжимаем нативные
+        // библиотеки в APK: файл для скачивания становится в ~2.5 раза меньше.
+        // При установке система распаковывает их — это стандартный путь,
+        // которым собирался и Firefox для Android.
+        jniLibs {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += setOf(
                 "/META-INF/{AL2.0,LGPL2.1}",

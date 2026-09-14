@@ -80,6 +80,29 @@ jobs:
 
       # Диагностика: если сборка упала — выкладываем хвост лога комментарием в PR,
       # чтобы ошибки компиляции были видны прямо в пул-реквесте.
+      - name: Отчёт о размере (в PR)
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -e
+          if [ -z "$PR_NUMBER" ]; then exit 0; fi
+          {
+            echo "### 📦 Отчёт о размере сборки"
+            echo ""
+            echo '```'
+            du -h app/build/outputs/apk/release/*.apk 2>/dev/null || echo "APK нет"
+            echo ""
+            echo "--- крупнейшие файлы внутри arm64 APK ---"
+            unzip -l app/build/outputs/apk/release/*arm64-v8a*.apk 2>/dev/null | sort -k1 -n -r | head -15 || true
+            echo ""
+            echo "--- AAR движка в кэше Gradle ---"
+            find ~/.gradle/caches/modules-2/files-2.1 -name "geckoview*.aar" -exec du -h {} + 2>/dev/null || true
+            echo '```'
+          } > "$RUNNER_TEMP/size.md"
+          gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/size.md" || true
+
       - name: Лог ошибок в PR
         if: failure()
         env:
