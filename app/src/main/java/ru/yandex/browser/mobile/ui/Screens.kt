@@ -48,6 +48,7 @@ import ru.yandex.browser.mobile.ui.icons.BIcons
 import ru.yandex.browser.mobile.ui.theme.AccentRed
 import ru.yandex.browser.mobile.ui.theme.HairLine
 import ru.yandex.browser.mobile.ui.theme.PureBlack
+import ru.yandex.browser.mobile.ui.theme.SurfaceRaised
 import ru.yandex.browser.mobile.ui.theme.SurfaceDeep
 import ru.yandex.browser.mobile.ui.theme.TextDim
 import ru.yandex.browser.mobile.ui.theme.TextMuted
