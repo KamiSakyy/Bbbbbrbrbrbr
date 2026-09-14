@@ -33,7 +33,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: JDK 17
+      - name: JDK 21
         uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -110,18 +110,40 @@ jobs:
           ls -lh app/build/outputs/apk/release/ || true
           du -h app/build/outputs/apk/release/*.apk || true
 
+      - name: Контрольные суммы
+        working-directory: app/build/outputs/apk/release
+        run: sha256sum *.apk > SHA256SUMS.txt && cat SHA256SUMS.txt
+
       - name: Загрузка APK
         uses: actions/upload-artifact@v4
         with:
           name: yandex-browser-release-apk
           if-no-files-found: error
           retention-days: 30
-          path: app/build/outputs/apk/release/*.apk
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/SHA256SUMS.txt
+            app/build/outputs/mapping/release/mapping.txt
 
       - name: Публикация релиза (по тегу)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/release/*.apk
+          files: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/SHA256SUMS.txt
           generate_release_notes: true
           name: "Яндекс Браузер ${{ github.ref_name }}"
+          body: |
+            Готовые подписанные APK (GeckoView 155, не WebView).
+
+            | Файл | Для кого |
+            |------|----------|
+            | `*-arm64-v8a.apk` | почти все телефоны с 2017 года и новее |
+            | `*-armeabi-v7a.apk` | старые 32-битные устройства |
+            | `*-x86_64.apk` | эмуляторы и планшеты на Intel |
+
+            Установка: скачайте нужный APK на телефон и откройте его
+            (разрешите установку из неизвестных источников).
+
+            Проверка целостности: `sha256sum -c SHA256SUMS.txt`.
