@@ -156,9 +156,17 @@ jobs:
         with:
           name: yandex-browser-release-apk
 
+      - name: Разложить файлы в корень
+        run: |
+          set -e
+          find . -name "*.apk" -exec cp {} . \;
+          find . -name "SHA256SUMS.txt" -exec cp {} . \;
+          ls -la *.apk SHA256SUMS.txt
+
       - name: Публикация релиза
         uses: softprops/action-gh-release@v2
         with:
+          fail_on_unmatched_files: true
           files: |
             app-arm64-v8a-release.apk
             app-armeabi-v7a-release.apk
