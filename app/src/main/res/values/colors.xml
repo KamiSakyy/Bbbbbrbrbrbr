@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Флэт-палитра: чистый чёрный + красный акцент -->
+    <color name="black_bg">#FF000000</color>
+    <color name="surface">#FF141416</color>
+    <color name="surface_alt">#FF17181C</color>
+    <color name="accent">#FFFC3F1D</color>
+    <color name="ic_launcher_background">#FFFC3F1D</color>
+</resources>

@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Бренд -->
+    <string name="app_name">Яндекс Браузер</string>
+    <string name="brand_search">Яндекс</string>
+
+    <!-- Адресная строка / главный экран -->
+    <string name="search_or_type_url">Поиск или адрес</string>
+    <string name="yandex_assistant">Яндекс Собеседник</string>
+    <string name="chip_traffic_saver">Экономия трафика</string>
+    <string name="chip_traffic_saver_on">Экономия трафика · вкл</string>
+    <string name="chip_traffic_saver_off">Экономия трафика · выкл</string>
+    <string name="chip_traffic_saver_desc">Блокировка рекламы, трекеров и тяжёлых элементов</string>
+    <string name="stat_blocked">Заблокировано: %1$d</string>
+    <string name="stat_saved">Сэкономлено ≈ %1$s</string>
+    <string name="home_quick_access">Быстрый доступ</string>
+    <string name="home_add_site">Сайт</string>
+    <string name="home_empty_hint">Добавьте сайты для быстрого доступа</string>
+
+    <!-- Вкладки -->
+    <string name="tabs_title">Вкладки · %1$d</string>
+    <string name="tab_new">Новая вкладка</string>
+    <string name="tab_new_private">Приватная</string>
+    <string name="tab_close">Закрыть вкладку</string>
+    <string name="tabs_close_all">Закрыть все</string>
+    <string name="private_badge">Приватно</string>
+
+    <!-- Меню -->
+    <string name="menu_new_tab">Новая вкладка</string>
+    <string name="menu_new_private">Новая приватная вкладка</string>
+    <string name="menu_reload">Обновить</string>
+    <string name="menu_bookmarks">Закладки</string>
+    <string name="menu_history">История</string>
+    <string name="menu_downloads">Загрузки</string>
+    <string name="menu_find">Найти на странице</string>
+    <string name="menu_desktop">Версия для ПК</string>
+    <string name="menu_desktop_off">Мобильная версия</string>
+    <string name="menu_add_bookmark">В закладки</string>
+    <string name="menu_remove_bookmark">Убрать из закладок</string>
+    <string name="menu_share">Поделиться</string>
+    <string name="menu_copy_link">Копировать ссылку</string>
+    <string name="menu_settings">Настройки</string>
+    <string name="menu_exit">Выход</string>
+
+    <!-- Поиск на странице -->
+    <string name="find_hint">Найти на странице</string>
+    <string name="find_prev">Предыдущее</string>
+    <string name="find_next">Следующее</string>
+    <string name="find_close">Закрыть поиск</string>
+
+    <!-- Настройки -->
+    <string name="settings_title">Настройки</string>
+    <string name="settings_group_browsing">Просмотр</string>
+    <string name="settings_group_privacy">Приватность и данные</string>
+    <string name="settings_group_about">О браузере</string>
+    <string name="settings_search_engine">Поисковая система</string>
+    <string name="settings_traffic_saver">Экономия трафика</string>
+    <string name="settings_traffic_saver_desc">Режим по умолчанию: режет рекламу, трекеры, веб-шрифты и лишние запросы — до 40%% меньше трафика</string>
+    <string name="settings_dark">Тёмная тема сайтов</string>
+    <string name="settings_dark_desc">Сайты с тёмной темой переключаются автоматически; где её нет — включается принудительно</string>
+    <string name="settings_background">Фоновый режим</string>
+    <string name="settings_background_desc">Сайты продолжают работать, пока браузер свёрнут или выключен экран</string>
+    <string name="settings_clear_cache">Очистить кэш</string>
+    <string name="settings_clear_cookies">Очистить cookie</string>
+    <string name="settings_clear_all">Очистить все данные</string>
+    <string name="settings_cleared">Готово: данные очищены</string>
+    <string name="settings_engine">Движок: %1$s</string>
+    <string name="settings_engine_value">GeckoView 155 · Gecko + SpiderMonkey + WebRender</string>
+    <string name="settings_version">Версия: %1$s</string>
+    <string name="settings_saved_traffic">Сэкономлено трафика</string>
+
+    <!-- История / закладки -->
+    <string name="bookmarks_title">Закладки</string>
+    <string name="history_title">История</string>
+    <string name="empty_bookmarks">Пока нет закладок</string>
+    <string name="empty_history">История пуста</string>
+    <string name="delete_all">Удалить всё</string>
+    <string name="delete">Удалить</string>
+
+    <!-- Уведомление фонового режима -->
+    <string name="notif_channel_background">Фоновая работа браузера</string>
+    <string name="notif_title">Яндекс Браузер работает в фоне</string>
+    <string name="notif_text">Вкладок: %1$d · сайты продолжают работать</string>
+    <string name="notif_action_open">Открыть</string>
+    <string name="notif_action_stop">Остановить</string>
+
+    <!-- Ошибки / заглушки -->
+    <string name="tab_crashed">Страница упала. Обновить?</string>
+    <string name="error_no_page">Введите адрес, чтобы начать</string>
+    <string name="toast_link_copied">Ссылка скопирована</string>
+</resources>

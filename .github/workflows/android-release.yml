@@ -1,0 +1,190 @@
+name: Build & Release APK
+
+on:
+  push:
+    branches:
+      - main
+      - "arena/**"
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ------------------------------------------------------------------
+  #  1. Сборка релизного APK (R8, сжатые нативные библиотеки)
+  # ------------------------------------------------------------------
+  build:
+    name: Release APK (R8 + minify)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.3.1"
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Ключ подписи (из секретов либо временный)
+        id: keys
+        run: |
+          set -e
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "store=$RUNNER_TEMP/release.jks" >> "$GITHUB_OUTPUT"
+            if [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+              echo "::error::Keystore передан, но пароль/алиас не заданы"
+              exit 1
+            fi
+            echo "Используется ключ из секретов."
+          else
+            keytool -genkeypair -v -keystore "$RUNNER_TEMP/release.jks" \
+              -alias ybrowser -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass ybrowser2026 -keypass ybrowser2026 \
+              -dname "CN=Yandex Browser Mobile, OU=Dev, O=Yandex, L=Moscow, C=RU"
+            echo "store=$RUNNER_TEMP/release.jks" >> "$GITHUB_OUTPUT"
+            echo "KEYSTORE_PASSWORD=ybrowser2026" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=ybrowser" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=ybrowser2026" >> "$GITHUB_ENV"
+            echo "::warning::Секреты подписи не заданы — APK подписан временным ключом."
+          fi
+
+      - name: Сборка release APK
+        id: build
+        run: |
+          set -o pipefail
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace \
+            -PKEYSTORE_FILE=${{ steps.keys.outputs.store }} 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      - name: Размер APK
+        if: always()
+        run: du -h app/build/outputs/apk/release/*.apk || true
+
+      - name: Контрольные суммы (только публикуемые APK)
+        working-directory: app/build/outputs/apk/release
+        run: |
+          sha256sum app-arm64-v8a-release.apk app-armeabi-v7a-release.apk > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Загрузка APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: yandex-browser-release-apk
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/SHA256SUMS.txt
+            app/build/outputs/mapping/release/mapping.txt
+
+      - name: Отчёт о размере (в PR)
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "$PR_NUMBER" ]; then exit 0; fi
+          {
+            echo "### 📦 Отчёт о размере сборки"
+            echo ""
+            echo '```'
+            du -h app/build/outputs/apk/release/*.apk 2>/dev/null || echo "APK нет"
+            echo ""
+            echo "--- крупнейшие файлы внутри arm64 APK ---"
+            unzip -l app/build/outputs/apk/release/*arm64-v8a*.apk 2>/dev/null | sort -k1 -n -r | head -15 || true
+            echo '```'
+          } > "$RUNNER_TEMP/size.md"
+          gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/size.md" || true
+
+      - name: Лог ошибок в PR
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "$PR_NUMBER" ]; then echo "PR не найден — пропускаем"; exit 0; fi
+          LOG="$RUNNER_TEMP/build.log"
+          {
+            echo "### ❌ Сборка упала"
+            echo ""
+            echo "**Ошибки компиляции/сборки:**"
+            echo '```'
+            grep -nE -A 12 "^e: |error: |Unresolved reference|Type mismatch|Expecting|None of the following|Caused by: " "$LOG" 2>/dev/null | head -120 || echo "нет строк с ошибками"
+            echo '```'
+          } > "$RUNNER_TEMP/comment.md"
+          gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/comment.md" || true
+
+  # ------------------------------------------------------------------
+  #  2. Публикация релиза (по тегу)
+  # ------------------------------------------------------------------
+  # ------------------------------------------------------------------
+  release:
+    name: Публикация релиза
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Скачать APK
+        uses: actions/download-artifact@v4
+        with:
+          name: yandex-browser-release-apk
+
+      - name: Разложить файлы в корень
+        run: |
+          set -e
+          find . -name "*.apk" -exec cp {} . \;
+          find . -name "SHA256SUMS.txt" -exec cp {} . \;
+          ls -la *.apk SHA256SUMS.txt
+
+      - name: Публикация релиза
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: true
+          files: |
+            app-arm64-v8a-release.apk
+            app-armeabi-v7a-release.apk
+            SHA256SUMS.txt
+          generate_release_notes: true
+          name: "Яндекс Браузер ${{ github.ref_name }}"
+          body: |
+            Готовые подписанные APK (движок GeckoView — не WebView).
+
+            | Файл | Для кого |
+            |------|----------|
+            | `app-arm64-v8a-release.apk` | все современные телефоны |
+            | `app-armeabi-v7a-release.apk` | старые 32-битные устройства |
+
+            Установка: скачайте APK прямо на телефон, откройте его и разрешите
+            установку из неизвестных источников.
+
+            Проверка целостности: `sha256sum -c SHA256SUMS.txt`.
+
+            Движок: GeckoView 155 (не Android WebView). Вкладки живут в фоне,
+            экономия трафика включена по умолчанию, тёмная тема — везде.
