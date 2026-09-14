@@ -291,7 +291,12 @@ fun LibraryScreen(
     onOpen: (String) -> Unit,
 ) {
     val title = if (kind == LibraryKind.BOOKMARKS) "Закладки" else "История"
-    val entries = if (kind == LibraryKind.BOOKMARKS) Settings.bookmarks.toList() else Settings.history.toList()
+    // Единый тип для двух источников: пара «заголовок — адрес».
+    val entries: List<Pair<String, String>> = if (kind == LibraryKind.BOOKMARKS) {
+        Settings.bookmarks.map { it.title to it.url }
+    } else {
+        Settings.history.map { it.title to it.url }
+    }
 
     Column(
         modifier = Modifier
@@ -334,26 +339,27 @@ fun LibraryScreen(
 
         LazyColumn(contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)) {
             items(entries) { item ->
+                val (itemTitle, itemUrl) = item
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
-                        .clickable { onOpen(item.url) }
+                        .clickable { onOpen(itemUrl) }
                         .padding(horizontal = 8.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    FaviconOrMonogram(url = item.url, size = 30.dp)
+                    FaviconOrMonogram(url = itemUrl, size = 30.dp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
-                            text = item.title.ifBlank { Urls.prettyHost(item.url) },
+                            text = itemTitle.ifBlank { Urls.prettyHost(itemUrl) },
                             color = TextPrimary,
                             fontSize = 14.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            text = Urls.prettyHost(item.url),
+                            text = Urls.prettyHost(itemUrl),
                             color = TextMuted,
                             fontSize = 12.sp,
                             maxLines = 1,
@@ -366,9 +372,9 @@ fun LibraryScreen(
                             .clip(CircleShape)
                             .clickable {
                                 if (kind == LibraryKind.BOOKMARKS) {
-                                    Settings.removeBookmark(item.url)
+                                    Settings.removeBookmark(itemUrl)
                                 } else {
-                                    Settings.history.remove(item)
+                                    Settings.history.removeAll { it.url == itemUrl }
                                 }
                             },
                         contentAlignment = Alignment.Center,

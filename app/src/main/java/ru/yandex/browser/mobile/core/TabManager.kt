@@ -14,6 +14,7 @@ import org.mozilla.geckoview.ContentBlocking
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
+import org.mozilla.geckoview.WebResponse
 
 /**
  * Вкладка = отдельная GeckoSession (собственный процесс рендеринга, куки-контекст,
@@ -235,8 +236,11 @@ class TabManager(private val context: Context) {
                 tab.loading = false
             }
 
-            override fun onExternalResponse(s: GeckoSession, response: GeckoSession.WebResponseInfo) {
-                Downloads.enqueue(context, response.uri, response.contentType, response.filename)
+            override fun onExternalResponse(s: GeckoSession, response: WebResponse) {
+                // В GeckoView 155 ответ отдаётся как WebResponse: адрес + заголовки.
+                val mime = response.headers["Content-Type"]?.substringBefore(';')?.trim()
+                val filename = Filenames.fromHeaders(response.headers, response.uri)
+                Downloads.enqueue(context, response.uri, mime, filename)
             }
         }
 
@@ -273,6 +277,7 @@ class TabManager(private val context: Context) {
                 s: GeckoSession,
                 url: String?,
                 perms: List<GeckoSession.PermissionDelegate.ContentPermission>,
+                hasUserGesture: Boolean,
             ) {
                 url?.let { tab.url = it }
             }
@@ -401,6 +406,22 @@ class TabManager(private val context: Context) {
  * Загрузки: отдаём системному DownloadManager — он умеет докачку,
  * уведомления и корректно переживает сворачивание приложения.
  */
+/** Имя файла для загрузки: из Content-Disposition, иначе из адреса. */
+object Filenames {
+    private val DISP = Regex("filename\\*?=(?:UTF-8'')?\"?([^\";]+)\"?")
+
+    fun fromHeaders(headers: Map<String, String>, url: String): String? {
+        val disp = headers.entries.firstOrNull { it.key.equals("Content-Disposition", true) }?.value
+        disp?.let { header ->
+            DISP.find(header)?.groupValues?.getOrNull(1)?.let { name ->
+                if (name.isNotBlank()) return name.trim()
+            }
+        }
+        val tail = url.substringAfterLast('/').substringBefore('?').substringBefore('#')
+        return tail.takeIf { it.isNotBlank() }
+    }
+}
+
 object Downloads {
     private const val TAG = "Downloads"
 

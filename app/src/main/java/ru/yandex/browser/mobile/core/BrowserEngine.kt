@@ -101,7 +101,7 @@ object BrowserEngine {
                     { ext ->
                         extension = ext
                         try {
-                            ext.setMessageDelegate(messageDelegate, NATIVE_APP)
+                            ext?.setMessageDelegate(messageDelegate, NATIVE_APP)
                         } catch (t: Throwable) {
                             Log.w(TAG, "Не удалось назначить message delegate расширения", t)
                         }

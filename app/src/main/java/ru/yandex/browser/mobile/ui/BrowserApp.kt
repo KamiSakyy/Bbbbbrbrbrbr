@@ -330,8 +330,9 @@ private fun findInPage(
     runCatching {
         session.finder.find(query, flags).accept(
             { result ->
-                val current = if (result.current > 0) result.current else 0
-                onResult(if (result.total > 0) "$current/${result.total}" else "0/0")
+                val found = result?.total ?: 0
+                val current = if (found > 0) (result?.current ?: 0) else 0
+                onResult(if (found > 0) "$current/$found" else "0/0")
             },
             { onResult("") },
         )

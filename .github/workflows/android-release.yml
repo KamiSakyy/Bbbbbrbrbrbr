@@ -93,7 +93,7 @@ jobs:
             echo ""
             echo "**Ошибки компиляции/сборки:**"
             echo '```'
-            grep -nE "^e: |error: |Unresolved reference|Type mismatch|Expecting|None of the following|Caused by: " "$LOG" 2>/dev/null | head -80 || echo "нет строк с ошибками"
+            grep -nE -A 12 "^e: |error: |Unresolved reference|Type mismatch|Expecting|None of the following|Caused by: " "$LOG" 2>/dev/null | head -120 || echo "нет строк с ошибками"
             echo '```'
             echo ""
             echo "<details><summary>Хвост лога</summary>"
