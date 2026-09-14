@@ -1,0 +1,133 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// ============================================================================
+//  ВЕРСИИ (пиннинг)
+// ============================================================================
+//  Движок: GeckoView (Gecko + SpiderMonkey + WebRender) — НЕ Android WebView.
+//  Актуальная стабильная ветка движка на дату сборки — 155.
+val geckoVersion = "155.0.20260903215306"
+
+// ============================================================================
+//  Подпись релиза: ключи берём из -P / env (CI secrets), иначе debug-подпись,
+//  чтобы локальная сборка `assembleRelease` работала без секретов.
+// ============================================================================
+fun propOrEnv(name: String): String? =
+    (findProperty(name) as String?)?.takeIf { it.isNotBlank() } ?: System.getenv(name)?.takeIf { it.isNotBlank() }
+
+val storeFilePath = propOrEnv("KEYSTORE_FILE")
+val storePass = propOrEnv("KEYSTORE_PASSWORD")
+val keyAliasName = propOrEnv("KEY_ALIAS")
+val keyPass = propOrEnv("KEY_PASSWORD")
+val hasReleaseKeys = storeFilePath != null && storePass != null && keyAliasName != null && keyPass != null
+
+android {
+    namespace = "ru.yandex.browser.mobile"
+    compileSdk = 36
+
+    defaultConfig {
+        applicationId = "ru.yandex.browser.mobile"
+        minSdk = 26            // GeckoView требует API 26+
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0.0"
+        // Оставляем только ru/en — экономит ~1.5 МБ в APK.
+        resourceConfigurations += listOf("ru", "en")
+    }
+
+    // ------------------------------------------------------------------
+    //  Раздельные APK по ABI: движок весит много, поэтому каждый APK
+    //  содержит только свою архитектуру (arm64 — основной).
+    // ------------------------------------------------------------------
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = false
+        }
+    }
+
+    signingConfigs {
+        if (hasReleaseKeys) {
+            create("release") {
+                storeFile = file(storeFilePath!!)
+                storePassword = storePass
+                keyAlias = keyAliasName
+                keyPassword = keyPass
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true          // R8: обфускация + удаление мёртвого кода
+            isShrinkResources = true        // выкидываем неиспользованные ресурсы
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            signingConfig = if (hasReleaseKeys) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
+        }
+        debug {
+            isMinifyEnabled = false
+            applicationIdSuffix = ".debug"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    packaging {
+        resources {
+            excludes += setOf(
+                "/META-INF/{AL2.0,LGPL2.1}",
+                "/META-INF/DEPENDENCIES",
+                "/META-INF/LICENSE*",
+                "META-INF/*.kotlin_module"
+            )
+        }
+    }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
+}
+
+dependencies {
+    // --- Kotlin / AndroidX core ---
+    implementation("androidx.core:core-ktx:1.19.0")
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+
+    // --- Jetpack Compose (BOM фиксирует все compose-артефакты) ---
+    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
+
+    // --- ДВИЖОК: GeckoView (полноценный браузерный движок, а не WebView) ---
+    implementation("org.mozilla.geckoview:geckoview:$geckoVersion")
+}

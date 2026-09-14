@@ -1,0 +1,97 @@
+name: Build & Release APK
+
+on:
+  push:
+    branches:
+      - main
+      - "arena/**"
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Release APK (R8 + minify)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+          cache-read-only: false
+
+      - name: Подготовка ключа подписи
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -e
+          mkdir -p "$RUNNER_TEMP/keys"
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/keys/release.jks"
+            echo "Используется ключ из секретов репозитория."
+          else
+            keytool -genkeypair -v \
+              -keystore "$RUNNER_TEMP/keys/release.jks" \
+              -storetype JKS \
+              -keyalg RSA -keysize 4096 -validity 10000 \
+              -alias ybrowser \
+              -storepass ybrowser2026 -keypass ybrowser2026 \
+              -dname "CN=Yandex Browser Mobile, OU=Mobile, O=Browser, L=Moscow, C=RU"
+            echo "::warning::Секреты подписи не заданы — APK подписан временным ключом. Добавьте ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD, чтобы обновления ставились поверх предыдущих версий."
+          fi
+
+      - name: Сборка release APK (arm64 / armv7 / x86_64)
+        run: |
+          export KEYSTORE_FILE="$RUNNER_TEMP/keys/release.jks"
+          export KEYSTORE_PASSWORD="${KEYSTORE_PASSWORD:-ybrowser2026}"
+          export KEY_ALIAS="${KEY_ALIAS:-ybrowser}"
+          export KEY_PASSWORD="${KEY_PASSWORD:-ybrowser2026}"
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Размеры APK
+        run: |
+          ls -lh app/build/outputs/apk/release/ || true
+          du -h app/build/outputs/apk/release/*.apk || true
+
+      - name: Загрузка APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: yandex-browser-release-apk
+          if-no-files-found: error
+          retention-days: 30
+          path: app/build/outputs/apk/release/*.apk
+
+      - name: Публикация релиза (по тегу)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/release/*.apk
+          generate_release_notes: true
+          name: "Яндекс Браузер ${{ github.ref_name }}"

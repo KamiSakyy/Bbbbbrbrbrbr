@@ -1,0 +1,30 @@
+{
+  "manifest_version": 2,
+  "name": "Яндекс Ассистент",
+  "version": "1.0.0",
+  "description": "Блокировка рекламы и трекеров + принудительная тёмная тема для сайтов без неё",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "assistant@yandex.browser",
+      "strict_min_version": "115.0"
+    }
+  },
+  "permissions": [
+    "<all_urls>",
+    "webRequest",
+    "webRequestBlocking",
+    "storage"
+  ],
+  "background": {
+    "scripts": ["blocklist.js", "background.js"],
+    "persistent": true
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["darkmode.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}
