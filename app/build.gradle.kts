@@ -34,8 +34,8 @@ android {
         applicationId = "ru.yandex.browser.mobile"
         minSdk = 26            // GeckoView требует API 26+
         targetSdk = 36   // compileSdk 37 — требование свежих AndroidX
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
     }
 
     // ------------------------------------------------------------------
