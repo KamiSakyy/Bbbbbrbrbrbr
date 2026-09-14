@@ -38,8 +38,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.yandex.browser.mobile.BuildConfig
+import ru.yandex.browser.mobile.core.BrowserEngine
 import ru.yandex.browser.mobile.core.SearchEngine
 import ru.yandex.browser.mobile.core.Settings
+import ru.yandex.browser.mobile.core.TabManager
 import ru.yandex.browser.mobile.core.TrafficStats
 import ru.yandex.browser.mobile.core.Urls
 import ru.yandex.browser.mobile.ui.icons.BIcons
@@ -384,5 +386,77 @@ fun LibraryScreen(
                 }
             }
         }
+    }
+}
+
+
+/**
+ * Диагностика движка: показывает состояние GeckoView прямо в приложении.
+ * Нужна, когда браузер ведёт себя не так, как ожидается: видно, поднялся ли
+ * движок, идёт ли загрузка, была ли первая отрисовка, какая ошибка.
+ */
+@Composable
+fun DiagnosticsScreen(
+    manager: TabManager,
+    onBack: () -> Unit,
+    onRunCheck: () -> Unit,
+) {
+    val tab = manager.activeTab
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+
+    fun report(): String = buildString {
+        appendLine("Яндекс Браузер — диагностика")
+        appendLine("Движок: GeckoView 155 (не WebView)")
+        appendLine("Runtime: " + if (BrowserEngine.instance != null) "поднят" else "НЕ поднят")
+        appendLine("Вкладок: " + manager.tabs.size)
+        appendLine("Активная: " + (tab?.url?.ifBlank { "-" } ?: "-"))
+        appendLine("Загрузка: " + (tab?.loading == true) + ", прогресс: " + (tab?.progress ?: 0))
+        appendLine("Первая отрисовка: " + if (tab?.firstPaint == true) "да" else "нет")
+        appendLine("Ошибка: " + (tab?.errorText ?: "нет") + " (код: " + (tab?.errorCode?.toString() ?: "-") + ")")
+        appendLine("Заблокировано запросов: " + TrafficStats.blockedRequests)
+        appendLine("Сэкономлено: " + TrafficStats.formatBytes(Settings.savedBytesTotal + TrafficStats.savedBytes))
+        appendLine("Версия: 1.0.2")
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(PureBlack)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp),
+    ) {
+        ScreenHeader(title = "Диагностика", onBack = onBack)
+
+        Spacer(Modifier.height(10.dp))
+        Text(report().trim(), color = TextPrimary, fontSize = 13.sp)
+        Spacer(Modifier.height(18.dp))
+
+        FlatRowButton("Проверить загрузку сайта (ya.ru)", primary = true, onClick = onRunCheck)
+        Spacer(Modifier.height(10.dp))
+        FlatRowButton("Скопировать отчёт", primary = false) {
+            clipboard.setText(androidx.compose.ui.text.AnnotatedString(report()))
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "Если что-то не работает — нажмите «Скопировать отчёт» и пришлите текст.",
+            color = TextMuted,
+            fontSize = 12.sp,
+        )
+    }
+}
+
+@Composable
+private fun FlatRowButton(label: String, primary: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (primary) AccentRed else SurfaceRaised)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
     }
 }

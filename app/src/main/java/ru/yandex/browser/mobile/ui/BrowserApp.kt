@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import android.util.Log
 import androidx.compose.ui.text.AnnotatedString
 import kotlinx.coroutines.delay
 import org.mozilla.geckoview.GeckoSession
@@ -46,6 +47,7 @@ class BrowserUiState {
     var library by mutableStateOf<LibraryKind?>(null)
     var editTiles by mutableStateOf(false)
     var toast by mutableStateOf<String?>(null)
+    var showDiagnostics by mutableStateOf(false)
 }
 
 @Composable
@@ -207,6 +209,20 @@ fun BrowserApp(manager: TabManager) {
             )
         }
 
+        if (ui.showDiagnostics) {
+            DiagnosticsScreen(
+                manager = manager,
+                onBack = { ui.showDiagnostics = false },
+                onRunCheck = {
+                    ui.showDiagnostics = false
+                    val target = "https://ya.ru"
+                    Log.i("YBBrowser", "SELFTEST: проверяем загрузку $target")
+                    manager.load(target)
+                    ui.toast = "Проверка запущена — смотрите, откроется ли сайт"
+                },
+            )
+        }
+
         ui.library?.let { kind ->
             LibraryScreen(
                 kind = kind,
@@ -298,6 +314,10 @@ private fun buildMenu(
     entries += MenuEntry(BIcons.Desktop, if (Settings.desktopMode) "Мобильная версия" else "Версия для ПК") {
         dismiss()
         Settings.applyDesktopMode(!Settings.desktopMode)
+    }
+    entries += MenuEntry(BIcons.Shield, "Диагностика движка") {
+        dismiss()
+        ui.showDiagnostics = true
     }
     entries += MenuEntry(BIcons.Settings, "Настройки") {
         dismiss()
