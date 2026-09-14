@@ -152,6 +152,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Android SDK + образ эмулятора
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platform-tools
+            emulator
+            system-images;android-34;default;x86_64
+
       - name: Скачать собранные APK
         uses: actions/download-artifact@v4
         with:
@@ -162,60 +176,72 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm || true
 
       - name: Запуск браузера в эмуляторе
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          arch: x86_64
-          target: default
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -memory 4096
-          disable-animations: true
-          script: |
-            set +e
-            exec > >(tee report.txt) 2>&1
+        run: |
+          set +e
+          {
+            echo "=== 1. Создаём виртуальное устройство ==="
+            echo no | avdmanager create avd -n test34 \
+              -k "system-images;android-34;default;x86_64" -d pixel_5 --force
+            echo "=== 2. Запускаем эмулятор ==="
+            emulator -avd test34 -no-window -no-audio -no-boot-anim \
+              -gpu swiftshader_indirect -no-snapshot -memory 4096 -netdelay none -netspeed full &
+            adb wait-for-device
+            for i in $(seq 1 100); do
+              BOOT=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+              if [ "$BOOT" = "1" ]; then break; fi
+              sleep 6
+            done
+            echo "boot_completed=$(adb shell getprop sys.boot_completed | tr -d '\r')"
+            echo "abi=$(adb shell getprop ro.product.cpu.abi | tr -d '\r')"
+            adb shell wm size
+            echo "=== 3. Ставим APK ==="
             APK=$(find . -name "app-x86_64-release.apk" | head -1)
             echo "APK_PATH=$APK"
-            ls -la
-            adb shell getprop ro.product.cpu.abi
-            adb shell wm size
             adb install -r "$APK"
             sleep 3
             adb shell pm list packages | grep ru.yandex.browser.mobile
+            echo "=== 4. Запускаем браузер ==="
             adb logcat -c
             adb shell am start -W -n ru.yandex.browser.mobile/.ui.MainActivity
             sleep 15
-            echo "--- deep link: открываем сайт ---"
+            echo "=== 5. Открываем сайт по deep link ==="
             adb shell am start -a android.intent.action.VIEW -d "https://ya.ru" ru.yandex.browser.mobile
             sleep 30
-            echo "--- поиск: тапаем адресную строку и вводим запрос ---"
+            echo "=== 6. Ищем через адресную строку ==="
             SIZE=$(adb shell wm size | grep -oE "[0-9]+x[0-9]+" | head -1)
             W=${SIZE%x*}; H=${SIZE#*x}
+            echo "screen=$W x $H"
             adb shell input tap $((W/2)) $((H*11/100))
             sleep 4
             adb shell input text "kotiki"
             sleep 2
             adb shell input tap $((W/2)) $((H*20/100))
             sleep 25
+            echo "=== 7. Собираем доказательства ==="
             adb exec-out screencap -p > screenshot.png
             adb logcat -d > logcat.txt
             adb shell dumpsys activity processes > processes.txt
-            echo "--- готово, файлы: ---"
-            ls -la
+            ls -la screenshot.png logcat.txt
+          } > report.txt 2>&1
+          echo "--- отчёт ---"
+          tail -40 report.txt
 
       - name: Проверка результата
         run: |
           set +e
           echo "=== скрипт эмулятора ==="
-          tail -30 report.txt 2>/dev/null
+          tail -40 report.txt 2>/dev/null
           echo "=== события браузера ==="
           grep -E "YBBrowser" logcat.txt 2>/dev/null | tail -80
           echo "=== падения ==="
-          grep -A 25 "FATAL EXCEPTION" logcat.txt | head -60
-          grep -iE "libxul|UnsatisfiedLink|GeckoLoader|Couldn't load" logcat.txt | head -20
+          grep -A 25 "FATAL EXCEPTION" logcat.txt 2>/dev/null | head -60
+          grep -iE "libxul|UnsatisfiedLink|GeckoLoader|Couldn't load" logcat.txt 2>/dev/null | head -20
 
           FAIL=0
-          [ -f logcat.txt ] || { echo "::error::Логи не собраны — эмулятор/установка не сработали"; exit 1; }
+          [ -f logcat.txt ] || { echo "::error::Эмулятор не дал логов"; exit 1; }
           grep -q "ENGINE_READY" logcat.txt || { echo "::error::Движок Gecko не поднялся"; FAIL=1; }
           grep -q "PAGE_START" logcat.txt || { echo "::error::Загрузка страницы не началась"; FAIL=1; }
           grep -qE "PAGE_STOP success=true|FIRST_PAINT" logcat.txt || { echo "::error::Страница не загрузилась / не отрисовалась"; FAIL=1; }
@@ -237,9 +263,9 @@ jobs:
             echo ""
             echo "Скриншот: $(stat -c%s screenshot.png 2>/dev/null || echo 0) байт"
             echo ""
-            echo "**Что делал скрипт (установка/запуск):**"
+            echo "**Установка и запуск:**"
             echo '```'
-            tail -25 report.txt 2>/dev/null || echo "report.txt нет — эмулятор не запустился"
+            tail -30 report.txt 2>/dev/null || echo "report.txt нет"
             echo '```'
             echo "**События браузера:**"
             echo '```'
@@ -260,7 +286,6 @@ jobs:
             logcat.txt
             processes.txt
             report.txt
-            install.txt
 
   # ------------------------------------------------------------------
   #  3. Публикация релиза (только по тегу и только после успешной проверки)
