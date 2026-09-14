@@ -45,6 +45,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -110,11 +111,14 @@ fun OmniboxOverlay(
                         imeAction = ImeAction.Go,
                         keyboardType = KeyboardType.Uri,
                     ),
+                    // Клавиатуры на разных телефонах присылают разные действия
+                    // (Go / Done / Search) — реагируем на все, иначе «нажал
+                    // кнопку и ничего не произошло».
                     keyboardActions = KeyboardActions(
-                        onGo = {
-                            val query = text.trim()
-                            if (query.isNotEmpty()) onSubmit(query)
-                        },
+                        onGo = { submitOmnibox(text, onSubmit) },
+                        onDone = { submitOmnibox(text, onSubmit) },
+                        onSearch = { submitOmnibox(text, onSubmit) },
+                        onSend = { submitOmnibox(text, onSubmit) },
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -172,6 +176,14 @@ fun OmniboxOverlay(
             }
         }
     }
+}
+
+/** Отправка запроса из адресной строки (одна точка входа для всех действий IME). */
+private fun submitOmnibox(text: String, onSubmit: (String) -> Unit) {
+    val query = text.trim()
+    if (query.isEmpty()) return
+    android.util.Log.i("YBBrowser", "OMNIBOX submit=\"$query\"")
+    onSubmit(query)
 }
 
 @Composable
@@ -499,6 +511,81 @@ fun SectionHeader(text: String) {
             .heightIn(min = 20.dp)
             .padding(start = 6.dp, top = 14.dp, bottom = 6.dp),
     )
+}
+
+/**
+ * Карточка ошибки загрузки: показывается поверх GeckoView, когда движок
+ * не смог открыть страницу (нет сети, нет DNS, SSL, падение процесса).
+ */
+@Composable
+fun ErrorOverlay(
+    title: String,
+    message: String,
+    url: String,
+    onRetry: () -> Unit,
+    onOpenHome: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(PureBlack),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                imageVector = BIcons.Shield,
+                contentDescription = null,
+                tint = AccentRed,
+                modifier = Modifier.size(36.dp),
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = title,
+                color = TextPrimary,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = message,
+                color = TextMuted,
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = Urls.prettyHost(url).ifBlank { url },
+                color = TextDim,
+                fontSize = 12.sp,
+                maxLines = 2,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(22.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FlatButton("Обновить", primary = true, onClick = onRetry)
+                FlatButton("На главную", primary = false, onClick = onOpenHome)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FlatButton(label: String, primary: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (primary) AccentRed else SurfaceRaised)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 22.dp, vertical = 12.dp),
+    ) {
+        Text(label, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+    }
 }
 
 /** Поисковые системы для экрана настроек. */

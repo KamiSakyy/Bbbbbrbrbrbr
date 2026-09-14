@@ -53,7 +53,7 @@ object BrowserEngine {
             val rt = GeckoRuntime.create(appContext, buildSettings())
             runtime = rt
             installAssistant(rt)
-            Log.i(TAG, "GeckoView 155 runtime поднят, движок не является Android WebView")
+            Log.i(LOG_TAG, "ENGINE_READY: GeckoRuntime поднят (GeckoView, не WebView)")
             return rt
         }
     }
@@ -103,14 +103,14 @@ object BrowserEngine {
                         try {
                             ext?.setMessageDelegate(messageDelegate, NATIVE_APP)
                         } catch (t: Throwable) {
-                            Log.w(TAG, "Не удалось назначить message delegate расширения", t)
+                            Log.w(LOG_TAG, "Не удалось назначить message delegate расширения", t)
                         }
                     },
-                    { error -> Log.w(TAG, "Расширение не установлено: ${error?.message}") },
+                    { error -> Log.w(LOG_TAG, "Расширение не установлено: ${error?.message}") },
                 )
         } catch (t: Throwable) {
             // Расширение — важное, но не критичное: без него браузер всё равно работает.
-            Log.w(TAG, "Ошибка установки расширения", t)
+            Log.w(LOG_TAG, "Ошибка установки расширения", t)
         }
     }
 
@@ -131,7 +131,7 @@ object BrowserEngine {
                     .put("darkMode", Settings.darkMode)
                     .put("blockAds", Settings.trafficSaver),
             )
-        }.onFailure { Log.w(TAG, "Не удалось отправить конфиг расширению", it) }
+        }.onFailure { Log.w(LOG_TAG, "Не удалось отправить конфиг расширению", it) }
     }
 
     // ------------------------------------------------------------------
@@ -149,7 +149,7 @@ object BrowserEngine {
                 .clearData(flags)
                 .accept({ onDone?.invoke() }, { onDone?.invoke() })
         }.onFailure {
-            Log.w(TAG, "clearData failed", it)
+            Log.w(LOG_TAG, "clearData failed", it)
             onDone?.invoke()
         }
     }

@@ -11,10 +11,21 @@ import androidx.compose.runtime.setValue
 import org.json.JSONArray
 import org.json.JSONObject
 import org.mozilla.geckoview.ContentBlocking
+import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
+import org.mozilla.geckoview.WebRequestError
 import org.mozilla.geckoview.WebResponse
+
+/**
+ * Единый лог-тег браузера. Вся диагностика (загрузка, отрисовка, блокировка,
+ * ошибки) пишется с этим тегом — по нему видно, что реально происходит
+ * в собранном APK на устройстве:
+ *
+ *     adb logcat -s YBBrowser
+ */
+const val LOG_TAG = "YBBrowser"
 
 /**
  * Вкладка = отдельная GeckoSession (собственный процесс рендеринга, куки-контекст,
@@ -34,6 +45,13 @@ class Tab(
     var canGoForward by mutableStateOf(false)
     var crashed by mutableStateOf(false)
 
+    /** Движок хотя бы раз отрисовал контент — значит рендеринг реально работает. */
+    var firstPaint by mutableStateOf(false)
+
+    /** Текст ошибки последней неудачной загрузки (для карточки «повторить»). */
+    var errorText by mutableStateOf<String?>(null)
+    var errorCode by mutableStateOf<Int?>(null)
+
     /** Сериализованное состояние сессии (история, формы, скролл) для восстановления. */
     var stateString: String? = null
 
@@ -50,7 +68,6 @@ class Tab(
 class TabManager(private val context: Context) {
 
     companion object {
-        private const val TAG = "TabManager"
         private const val FILE = "yb_tabs"
         private const val KEY_STATE = "tabs_state"
     }
@@ -70,6 +87,7 @@ class TabManager(private val context: Context) {
 
     init {
         restoreTabs()
+        Log.i(LOG_TAG, "TabManager готов, вкладок: ${tabs.size}, активная: ${activeTab?.url}")
     }
 
     // ------------------------------------------------------------------
@@ -89,8 +107,9 @@ class TabManager(private val context: Context) {
             selectTab(tab.id)
         }
         if (!url.isNullOrBlank() && !Urls.isAbout(url)) {
-            tab.session.loadUri(url)
+            loadIn(tab, url)
         }
+        Log.i(LOG_TAG, "NEW_TAB id=${tab.id} private=$private url=${url ?: "-"}")
         persist()
         return tab
     }
@@ -139,16 +158,59 @@ class TabManager(private val context: Context) {
         persist()
     }
 
+    /**
+     * Загрузка в активную вкладку. Адрес показываем сразу — чтобы главный экран
+     * исчез мгновенно, а не ждал колбэка от движка.
+     */
     fun load(url: String) {
         val tab = activeTab ?: newTab(url)
+        loadIn(tab, url)
+    }
+
+    private fun loadIn(tab: Tab, url: String) {
         if (Urls.isAbout(url)) {
             tab.url = url
-        } else {
-            tab.session.loadUri(url)
+            return
         }
+        tab.errorText = null
+        tab.errorCode = null
+        tab.crashed = false
+        tab.url = url
+        tab.loading = true
+        tab.progress = 5
+        Log.i(LOG_TAG, "LOAD tab=${tab.id} url=$url")
+        ensureOpen(tab)
+        runCatching { tab.session.loadUri(url) }
+            .onFailure { Log.e(LOG_TAG, "loadUri упал для $url", it) }
+    }
+
+    /**
+     * Сессия могла быть закрыта из-за падения процесса рендеринга — тогда её
+     * нужно открыть заново, иначе loadUri молча ничего не сделает.
+     */
+    private fun ensureOpen(tab: Tab) {
+        if (tab.session.isOpen) return
+        runCatching {
+            tab.session.open(BrowserEngine.bootstrap(context))
+            Log.i(LOG_TAG, "REOPEN session tab=${tab.id}")
+        }.onFailure { Log.e(LOG_TAG, "open() упал для вкладки ${tab.id}", it) }
+    }
+
+    /** Восстановление упавшей вкладки: переоткрываем сессию и грузим заново. */
+    fun reviveTab(tab: Tab) {
+        val url = tab.url.ifBlank { Settings.searchEngine.homePage }
+        Log.i(LOG_TAG, "REVIVE tab=${tab.id} url=$url")
+        tab.crashed = false
+        tab.firstPaint = false
+        tab.errorText = null
+        tab.errorCode = null
+        ensureOpen(tab)
+        loadIn(tab, url)
     }
 
     fun reload() {
+        // Если вкладка показывала ошибку — просто перезагружаем адрес заново.
+        activeTab?.errorText?.let { activeTab?.let { tab -> loadIn(tab, tab.url.ifBlank { "about:home" }) }; return }
         activeTab?.session?.reload()
     }
 
@@ -181,7 +243,7 @@ class TabManager(private val context: Context) {
                 if (!Urls.isAbout(tab.url) && tab.url.isNotBlank()) {
                     tab.session.reload()
                 }
-            }.onFailure { Log.w(TAG, "applyUserAgentMode failed", it) }
+            }.onFailure { Log.w(LOG_TAG, "applyUserAgentMode failed", it) }
         }
     }
 
@@ -193,7 +255,6 @@ class TabManager(private val context: Context) {
         GeckoSessionSettings.Builder()
             .usePrivateMode(private)
             .useTrackingProtection(Settings.trafficSaver)
-            .contextId(if (private) "private" else "default")
             .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
             .userAgentMode(
                 if (Settings.desktopMode) {
@@ -222,24 +283,38 @@ class TabManager(private val context: Context) {
                 }
             }
 
+            override fun onFirstContentfulPaint(s: GeckoSession) {
+                // Движок реально что-то нарисовал — снимаем чёрную заглушку и
+                // считаем страницу загруженной.
+                tab.firstPaint = true
+                Log.i(LOG_TAG, "FIRST_PAINT tab=${tab.id} url=${tab.url}")
+            }
+
             override fun onFullScreen(s: GeckoSession, fullScreen: Boolean) {
                 fullscreen = fullScreen
             }
 
             override fun onCrash(s: GeckoSession) {
+                Log.e(LOG_TAG, "CONTENT_CRASH tab=${tab.id} url=${tab.url}")
                 tab.crashed = true
                 tab.loading = false
+                tab.errorText = "Процесс страницы упал"
+                persistSoon()
             }
 
             override fun onKill(s: GeckoSession) {
+                Log.e(LOG_TAG, "CONTENT_KILL tab=${tab.id} url=${tab.url}")
                 tab.crashed = true
                 tab.loading = false
+                tab.errorText = "Процесс страницы был остановлен системой"
+                persistSoon()
             }
 
             override fun onExternalResponse(s: GeckoSession, response: WebResponse) {
                 // В GeckoView 155 ответ отдаётся как WebResponse: адрес + заголовки.
                 val mime = response.headers["Content-Type"]?.substringBefore(';')?.trim()
                 val filename = Filenames.fromHeaders(response.headers, response.uri)
+                Log.i(LOG_TAG, "DOWNLOAD url=${response.uri} mime=$mime file=$filename")
                 Downloads.enqueue(context, response.uri, mime, filename)
             }
         }
@@ -248,14 +323,22 @@ class TabManager(private val context: Context) {
             override fun onPageStart(s: GeckoSession, url: String) {
                 tab.loading = true
                 tab.crashed = false
+                tab.errorText = null
+                tab.errorCode = null
                 tab.progress = 5
+                Log.i(LOG_TAG, "PAGE_START tab=${tab.id} url=$url")
             }
 
             override fun onPageStop(s: GeckoSession, success: Boolean) {
                 tab.loading = false
                 tab.progress = 100
-                if (success && !Urls.isAbout(tab.url)) {
-                    Settings.addHistory(tab.title, tab.url)
+                Log.i(LOG_TAG, "PAGE_STOP success=$success tab=${tab.id} url=${tab.url}")
+                if (success) {
+                    if (!Urls.isAbout(tab.url)) {
+                        Settings.addHistory(tab.title, tab.url)
+                    }
+                } else if (tab.errorText == null) {
+                    tab.errorText = "Не удалось загрузить страницу"
                 }
                 persistSoon()
             }
@@ -279,7 +362,11 @@ class TabManager(private val context: Context) {
                 perms: List<GeckoSession.PermissionDelegate.ContentPermission>,
                 hasUserGesture: Boolean,
             ) {
-                url?.let { tab.url = it }
+                url?.let {
+                    tab.url = it
+                    if (tab.errorText == null) tab.crashed = false
+                    Log.i(LOG_TAG, "LOCATION tab=${tab.id} url=$it")
+                }
             }
 
             override fun onCanGoBack(s: GeckoSession, canGoBack: Boolean) {
@@ -293,11 +380,33 @@ class TabManager(private val context: Context) {
             override fun onNewSession(
                 s: GeckoSession,
                 uri: String,
-            ): org.mozilla.geckoview.GeckoResult<GeckoSession>? {
+            ): GeckoResult<GeckoSession>? {
                 // window.open / target=_blank открываем как новую вкладку.
                 val fresh = newTab(url = null, private = tab.isPrivate, select = true)
-                fresh.url = uri
-                return org.mozilla.geckoview.GeckoResult.fromValue(fresh.session)
+                loadIn(fresh, uri)
+                return GeckoResult.fromValue(fresh.session)
+            }
+
+            /**
+             * Ошибки сети/DNS/SSL. Возвращаем null — ровно то же, что делает
+             * реализация по умолчанию (движок показывает собственную страницу
+             * ошибки), но у нас остаётся текст для карточки «повторить».
+             */
+            override fun onLoadError(
+                s: GeckoSession,
+                uri: String?,
+                error: WebRequestError,
+            ): GeckoResult<String>? {
+                tab.errorCode = error.code
+                tab.errorText = describeError(error)
+                tab.loading = false
+                Log.e(
+                    LOG_TAG,
+                    "LOAD_ERROR tab=${tab.id} url=$uri code=${error.code} " +
+                        "category=${error.category} text=${tab.errorText}",
+                )
+                persistSoon()
+                return null
             }
         }
 
@@ -311,8 +420,29 @@ class TabManager(private val context: Context) {
                 )
                 TrafficStats.onBlocked(estimated)
                 Settings.addSavedBytes(estimated)
+                Log.i(LOG_TAG, "BLOCKED ${event.uri}")
             }
         }
+    }
+
+    /** Человеческое объяснение сетевой ошибки. */
+    private fun describeError(error: WebRequestError): String = when (error.code) {
+        WebRequestError.ERROR_UNKNOWN_HOST -> "Не удалось найти сайт (проверьте адрес и интернет)"
+        WebRequestError.ERROR_NET_INTERRUPT -> "Соединение прервано"
+        WebRequestError.ERROR_NET_TIMEOUT -> "Сайт не отвечает (таймаут)"
+        WebRequestError.ERROR_CONNECTION_REFUSED -> "Сайт отклонил подключение"
+        WebRequestError.ERROR_OFFLINE -> "Нет подключения к интернету"
+        WebRequestError.ERROR_SECURITY_BAD_CERT, WebRequestError.ERROR_SECURITY_SSL ->
+            "Проблема с сертификатом безопасности сайта"
+        WebRequestError.ERROR_REDIRECT_LOOP -> "Слишком много перенаправлений"
+        WebRequestError.ERROR_UNKNOWN_PROTOCOL -> "Неизвестный протокол"
+        WebRequestError.ERROR_FILE_NOT_FOUND -> "Файл не найден"
+        WebRequestError.ERROR_MALFORMED_URI -> "Некорректный адрес"
+        WebRequestError.ERROR_SAFEBROWSING_MALWARE_URI -> "Сайт заблокирован: вредоносное ПО"
+        WebRequestError.ERROR_SAFEBROWSING_PHISHING_URI -> "Сайт заблокирован: фишинг"
+        WebRequestError.ERROR_SAFEBROWSING_UNWANTED_URI -> "Сайт заблокирован: нежелательное ПО"
+        WebRequestError.ERROR_SAFEBROWSING_HARMFUL_URI -> "Сайт заблокирован: опасный контент"
+        else -> "Не удалось загрузить страницу (код ${error.code})"
     }
 
     // ------------------------------------------------------------------
@@ -349,7 +479,7 @@ class TabManager(private val context: Context) {
                 .put("active", tabs.indexOfFirst { it.id == activeId })
                 .put("tabs", arr)
             prefs.edit().putString(KEY_STATE, root.toString()).apply()
-        }.onFailure { Log.w(TAG, "persist failed", it) }
+        }.onFailure { Log.w(LOG_TAG, "persist failed", it) }
     }
 
     private fun restoreTabs() {
@@ -382,7 +512,7 @@ class TabManager(private val context: Context) {
                 session.open(runtime)
                 session.setActive(false)
                 tabs.add(tab)
-            }.onFailure { Log.w(TAG, "Не удалось восстановить вкладку $url", it) }
+            }.onFailure { Log.w(LOG_TAG, "Не удалось восстановить вкладку $url", it) }
         }
 
         if (tabs.isEmpty()) {
@@ -402,10 +532,6 @@ class TabManager(private val context: Context) {
     }
 }
 
-/**
- * Загрузки: отдаём системному DownloadManager — он умеет докачку,
- * уведомления и корректно переживает сворачивание приложения.
- */
 /** Имя файла для загрузки: из Content-Disposition, иначе из адреса. */
 object Filenames {
     private val DISP = Regex("filename\\*?=(?:UTF-8'')?\"?([^\";]+)\"?")
@@ -422,9 +548,11 @@ object Filenames {
     }
 }
 
+/**
+ * Загрузки: отдаём системному DownloadManager — он умеет докачку,
+ * уведомления и корректно переживает сворачивание приложения.
+ */
 object Downloads {
-    private const val TAG = "Downloads"
-
     fun enqueue(context: Context, url: String, mime: String?, filename: String?) {
         runCatching {
             val request = DownloadManager.Request(Uri.parse(url)).apply {
@@ -436,6 +564,6 @@ object Downloads {
             }
             val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             manager.enqueue(request)
-        }.onFailure { Log.w(TAG, "Не удалось поставить загрузку $url", it) }
+        }.onFailure { Log.w(LOG_TAG, "Не удалось поставить загрузку $url", it) }
     }
 }

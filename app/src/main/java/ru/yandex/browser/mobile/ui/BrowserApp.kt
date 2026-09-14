@@ -106,6 +106,17 @@ fun BrowserApp(manager: TabManager) {
                 // поэтому сайт не перезагружается при возврате к нему.
                 GeckoViewHost(tab = tab, modifier = Modifier.fillMaxSize())
 
+                val errorText = tab?.errorText
+                if (tab != null && !isHome && errorText != null) {
+                    ErrorOverlay(
+                        title = if (tab.crashed) "Вкладка перестала работать" else "Не удалось открыть страницу",
+                        message = errorText,
+                        url = tab.url,
+                        onRetry = { manager.reviveTab(tab) },
+                        onOpenHome = { manager.load(Urls.ABOUT_HOME) },
+                    )
+                }
+
                 if (isHome) {
                     HomeScreen(
                         editMode = ui.editTiles,
@@ -166,7 +177,9 @@ fun BrowserApp(manager: TabManager) {
                 onDismiss = { ui.omnibox = false },
                 onSubmit = { input ->
                     ui.omnibox = false
-                    manager.load(Urls.resolve(input, Settings.searchEngine))
+                    val target = Urls.resolve(input, Settings.searchEngine)
+                    android.util.Log.i("YBBrowser", "SEARCH \"$input\" -> $target")
+                    manager.load(target)
                 },
             )
         }

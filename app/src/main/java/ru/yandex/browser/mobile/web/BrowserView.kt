@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color as AndroidColor
+import android.util.Log
 import android.util.LruCache
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -19,6 +20,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.mozilla.geckoview.GeckoView
+import ru.yandex.browser.mobile.core.LOG_TAG
 import ru.yandex.browser.mobile.core.Tab
 import ru.yandex.browser.mobile.core.Urls
 import java.io.File
@@ -38,27 +40,31 @@ fun GeckoViewHost(
     modifier: Modifier = Modifier,
 ) {
     if (tab == null) return
-    val sessionKey = remember { mutableStateOf<String?>(null) }
 
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
             GeckoView(ctx).apply {
+                setAutofillEnabled(true)
                 // Пока страница не нарисована — показываем чистый чёрный,
                 // без белой вспышки (важно для тёмной темы).
                 coverUntilFirstPaint(AndroidColor.BLACK)
-                setAutofillEnabled(true)
+                Log.i(LOG_TAG, "GeckoView создан")
             }
         },
         update = { view ->
-            val key = "${tab.id}:${System.identityHashCode(tab.session)}"
-            if (sessionKey.value != key) {
-                runCatching { view.setSession(tab.session) }
-                sessionKey.value = key
-            }
+            // setSession() сам корректно отцепляет предыдущую сессию,
+            // поэтому переключение вкладок безопасно.
+            runCatching {
+                if (view.session !== tab.session) {
+                    view.setSession(tab.session)
+                    Log.i(LOG_TAG, "ATTACH view<-tab=${tab.id} url=${tab.url}")
+                }
+            }.onFailure { Log.e(LOG_TAG, "Не удалось привязать сессию вкладки ${tab.id}", it) }
         },
         onRelease = { view ->
             runCatching { view.releaseSession() }
+            Log.i(LOG_TAG, "GeckoView освобождён")
         },
     )
 }

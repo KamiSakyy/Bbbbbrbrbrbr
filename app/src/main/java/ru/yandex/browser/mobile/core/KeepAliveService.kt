@@ -59,6 +59,7 @@ class KeepAliveService : Service() {
             return START_NOT_STICKY
         }
         startForeground(NOTIFICATION_ID, buildNotification())
+        android.util.Log.i("YBBrowser", "Фоновый сервис запущен: вкладки продолжают работать")
         return START_STICKY
     }
 
@@ -98,27 +99,16 @@ class KeepAliveService : Service() {
 
         val tabs = runCatching { TabsHolder.manager?.tabs?.size ?: 0 }.getOrDefault(0)
 
-        return Notification.Builder(this, CHANNEL_ID)
+        return androidx.core.app.NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(getString(R.string.notif_title))
             .setContentText(getString(R.string.notif_text, tabs))
             .setContentIntent(openIntent)
-            .addAction(
-                Notification.Action.Builder(
-                    null as android.graphics.drawable.Icon?,
-                    getString(R.string.notif_action_open),
-                    openIntent,
-                ).build(),
-            )
-            .addAction(
-                Notification.Action.Builder(
-                    null as android.graphics.drawable.Icon?,
-                    getString(R.string.notif_action_stop),
-                    stopIntent,
-                ).build(),
-            )
+            .addAction(0, getString(R.string.notif_action_open), openIntent)
+            .addAction(0, getString(R.string.notif_action_stop), stopIntent)
             .setOngoing(true)
             .setShowWhen(false)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
             .setCategory(Notification.CATEGORY_SERVICE)
             .build()
     }

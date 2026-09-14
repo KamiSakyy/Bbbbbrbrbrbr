@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.app.ActivityCompat
@@ -32,6 +33,14 @@ class MainActivity : ComponentActivity() {
         askNotificationPermission()
         openFromIntent(intent)
 
+        // Фоновый режим: сервис с уведомлением поднимаем, пока приложение ещё
+        // на переднем плане. Запуск сервиса из onStop на Android 12+ падает с
+        // ForegroundServiceStartNotAllowedException — так надёжнее.
+        if (Settings.backgroundMode) {
+            runCatching { KeepAliveService.start(this) }
+                .onFailure { Log.w("YBBrowser", "Не удалось поднять фоновый сервис", it) }
+        }
+
         setContent {
             YandexBrowserTheme {
                 BrowserApp(manager)
@@ -50,17 +59,17 @@ class MainActivity : ComponentActivity() {
      * не должно висеть. Как только пользователь свернул приложение —
      * сервис поднимается и держит движок живым.
      */
-    override fun onStart() {
-        super.onStart()
-        KeepAliveService.stop(this)
-    }
-
+    /** Приложение на переднем плане: сохраняем вкладки, движок продолжает жить. */
     override fun onStop() {
         super.onStop()
         manager.persist()
-        if (Settings.backgroundMode) {
-            KeepAliveService.start(this)
-        }
+        Log.i("YBBrowser", "ON_STOP: вкладки сохранены (${manager.tabs.size})")
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Сервис уже запущен с onCreate — здесь только фиксируем возврат.
+        Log.i("YBBrowser", "ON_START")
     }
 
     private fun openFromIntent(intent: Intent?) {

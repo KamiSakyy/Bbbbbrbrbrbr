@@ -30,6 +30,7 @@ class YandexBrowserApp : Application() {
 
         // Восстанавливаем вкладки процесса (сессии Gecko) сразу на старте.
         val manager = TabManager(this)
+        android.util.Log.i("YBBrowser", "APP_START: вкладок ${manager.tabs.size}")
         TabsHolder.manager = manager
         if (manager.tabs.isEmpty()) {
             manager.newTab(Urls.ABOUT_HOME)
