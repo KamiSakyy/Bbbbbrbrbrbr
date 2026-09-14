@@ -87,12 +87,21 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           if [ -z "$PR_NUMBER" ]; then echo "PR не найден — пропускаем"; exit 0; fi
+          LOG="$RUNNER_TEMP/build.log"
           {
             echo "### ❌ Сборка упала"
             echo ""
+            echo "**Ошибки компиляции/сборки:**"
             echo '```'
-            tail -c 15000 "$RUNNER_TEMP/build.log" 2>/dev/null || echo "лог недоступен"
+            grep -nE "^e: |error: |Unresolved reference|Type mismatch|Expecting|None of the following|Caused by: " "$LOG" 2>/dev/null | head -80 || echo "нет строк с ошибками"
             echo '```'
+            echo ""
+            echo "<details><summary>Хвост лога</summary>"
+            echo ""
+            echo '```'
+            tail -c 6000 "$LOG" 2>/dev/null || echo "лог недоступен"
+            echo '```'
+            echo "</details>"
           } > "$RUNNER_TEMP/comment.md"
           gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/comment.md" || true
 
