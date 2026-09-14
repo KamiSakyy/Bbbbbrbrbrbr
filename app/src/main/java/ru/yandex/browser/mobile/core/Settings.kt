@@ -97,29 +97,29 @@ object Settings {
 
     // ---------------- Сеттеры ----------------
 
-    fun setSearchEngine(engine: SearchEngine) {
+    fun applySearchEngine(engine: SearchEngine) {
         searchEngine = engine
         sp.edit().putString(K_ENGINE, engine.id).apply()
     }
 
-    fun setTrafficSaver(value: Boolean) {
+    fun applyTrafficSaver(value: Boolean) {
         trafficSaver = value
         sp.edit().putBoolean(K_TRAFFIC, value).apply()
         onTrafficSaverChanged?.invoke(value)
     }
 
-    fun setDarkMode(value: Boolean) {
+    fun applyDarkMode(value: Boolean) {
         darkMode = value
         sp.edit().putBoolean(K_DARK, value).apply()
         onDarkModeChanged?.invoke(value)
     }
 
-    fun setBackgroundMode(value: Boolean) {
+    fun applyBackgroundMode(value: Boolean) {
         backgroundMode = value
         sp.edit().putBoolean(K_BACKGROUND, value).apply()
     }
 
-    fun setDesktopMode(value: Boolean) {
+    fun applyDesktopMode(value: Boolean) {
         desktopMode = value
         sp.edit().putBoolean(K_DESKTOP, value).apply()
         onDesktopModeChanged?.invoke(value)

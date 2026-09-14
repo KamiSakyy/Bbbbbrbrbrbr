@@ -92,7 +92,7 @@ fun BrowserApp(manager: TabManager) {
                         onReload = { manager.reload() },
                         onStop = { manager.stop() },
                         onVoice = { startVoiceSearch(speechLauncher) { ui.toast = it } },
-                        onToggleTrafficSaver = { Settings.setTrafficSaver(!Settings.trafficSaver) },
+                        onToggleTrafficSaver = { Settings.applyTrafficSaver(!Settings.trafficSaver) },
                     )
                 }
             }
@@ -149,7 +149,7 @@ fun BrowserApp(manager: TabManager) {
                         onForward = { manager.goForward() },
                         onTabs = { ui.showTabs = true },
                         onTrafficSaver = {
-                            Settings.setTrafficSaver(!Settings.trafficSaver)
+                            Settings.applyTrafficSaver(!Settings.trafficSaver)
                             ui.toast = if (Settings.trafficSaver) "Экономия трафика включена" else "Экономия трафика выключена"
                         },
                         onMenu = { ui.showMenu = true },
@@ -284,7 +284,7 @@ private fun buildMenu(
     }
     entries += MenuEntry(BIcons.Desktop, if (Settings.desktopMode) "Мобильная версия" else "Версия для ПК") {
         dismiss()
-        Settings.setDesktopMode(!Settings.desktopMode)
+        Settings.applyDesktopMode(!Settings.desktopMode)
     }
     entries += MenuEntry(BIcons.Settings, "Настройки") {
         dismiss()

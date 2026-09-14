@@ -179,7 +179,7 @@ fun SettingsScreen(
                     title = "Экономия трафика",
                     description = "Режет рекламу, трекеры, веб-шрифты и лишние запросы",
                     checked = Settings.trafficSaver,
-                    onCheckedChange = { Settings.setTrafficSaver(it) },
+                    onCheckedChange = { Settings.applyTrafficSaver(it) },
                 )
             }
             item {
@@ -188,7 +188,7 @@ fun SettingsScreen(
                     title = "Тёмная тема сайтов",
                     description = "Сайты с тёмной темой — сразу тёмные, остальные принудительно",
                     checked = Settings.darkMode,
-                    onCheckedChange = { Settings.setDarkMode(it) },
+                    onCheckedChange = { Settings.applyDarkMode(it) },
                 )
             }
             item {
@@ -197,7 +197,7 @@ fun SettingsScreen(
                     title = "Фоновый режим",
                     description = "Сайты работают, пока браузер свёрнут, и не перезагружаются",
                     checked = Settings.backgroundMode,
-                    onCheckedChange = { Settings.setBackgroundMode(it) },
+                    onCheckedChange = { Settings.applyBackgroundMode(it) },
                 )
             }
             item {
@@ -206,7 +206,7 @@ fun SettingsScreen(
                     title = "Версия для ПК",
                     description = "Сайты отдают десктопную вёрстку",
                     checked = Settings.desktopMode,
-                    onCheckedChange = { Settings.setDesktopMode(it) },
+                    onCheckedChange = { Settings.applyDesktopMode(it) },
                 )
             }
 
@@ -239,7 +239,7 @@ fun SettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                Settings.setSearchEngine(engine)
+                                Settings.applySearchEngine(engine)
                                 enginesExpanded = false
                             }
                             .padding(start = 52.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
